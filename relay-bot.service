@@ -1,0 +1,26 @@
+[Unit]
+Description=Relay Bot — Telegram → Claude Agent SDK bridge
+Documentation=https://github.com/yaegerrrr/relay-bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=relay
+Group=relay
+WorkingDirectory=/srv/relay-bot
+EnvironmentFile=/srv/relay-bot/.env
+ExecStart=/usr/bin/node --import tsx/esm /srv/relay-bot/src/bot.ts
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/var/log/relay-bot/bot.log
+StandardError=append:/var/log/relay-bot/bot.err
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Tame resource usage so a runaway agent can't OOM the whole VPS
+MemoryMax=1500M
+TasksMax=200
+
+[Install]
+WantedBy=multi-user.target
