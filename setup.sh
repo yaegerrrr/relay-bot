@@ -47,11 +47,16 @@ if ! id "$USER_NAME" >/dev/null 2>&1; then
 fi
 
 echo "==> Cloning bot to ${INSTALL_DIR}"
+# /srv is root-owned, so create the target dir ourselves and chown it
+# to the relay user before letting it write inside. Without this the
+# `git clone` runs as relay and bombs with EPERM.
 if [[ -d "$INSTALL_DIR/.git" ]]; then
+  chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
   sudo -u "$USER_NAME" git -C "$INSTALL_DIR" pull --ff-only
 else
   rm -rf "$INSTALL_DIR"
-  sudo -u "$USER_NAME" git clone "$REPO_URL" "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR"
+  chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
 fi
 
 echo "==> Installing npm deps"
