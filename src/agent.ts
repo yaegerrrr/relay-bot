@@ -43,6 +43,32 @@ export async function* runAgent(opts: RunOptions): AsyncGenerator<AgentEvent> {
     // agent, and the VPS is single-tenant (this user's projects only).
     permissionMode: "bypassPermissions",
     model: opts.model,
+    // Load CLAUDE.md / settings files from the cwd. Without this the
+    // SDK ignores them entirely and the agent has no idea what's in
+    // the working dir — it'll reach for the GitHub CLI or web search
+    // before considering `ls` + `cd`.
+    settingSources: ["project"],
+    // Plus a short directive in the system prompt so it ALWAYS knows
+    // the layout even if CLAUDE.md fails to load for any reason.
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: [
+        "You are running on a Linux VPS, driven by Telegram messages relayed",
+        "from a single user. Your cwd is /srv/relay-bot/repos, which contains",
+        "FIVE separate git repos as sibling subdirectories:",
+        "  parts-inventory/             (server,     branch master, github.com/yaegerrrr/parts-inventory)",
+        "  parts-inventory-web/         (web app,    branch main,   github.com/yaegerrrr/parts-inventory-web)",
+        "  parts-inventory-mobile/      (mobile,     branch main,   github.com/yaegerrrr/parts-inventory-mobile)",
+        "  parts-inventory-storefront/  (storefront, branch main,   github.com/yaegerrrr/parts-inventory-storefront)",
+        "  relay-bot/                   (this bot,   branch main,   github.com/yaegerrrr/relay-bot)",
+        "When the user references a repo by name (e.g. 'parts-inventory'),",
+        "cd into that subdir before running git commands. There is NO umbrella",
+        "repo at /srv/relay-bot/repos. The watcher Electron app lives at",
+        "parts-inventory/watcher-app/. SSH key for github.com is configured —",
+        "git pull/push work out of the box.",
+      ].join(" "),
+    },
     ...(opts.resumeSessionId ? { resume: opts.resumeSessionId } : {}),
   };
 
