@@ -20,6 +20,17 @@ const TELEGRAM_ALLOWED_USER_IDS = required("TELEGRAM_ALLOWED_USER_IDS");
 const WORKING_ROOT = path.resolve(process.env.WORKING_ROOT ?? "./repos");
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? "./data");
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
+// Shared with the user's VS Code Claude sessions. Memory is owned by
+// the laptop and pushed here; journal is appended to by both sides and
+// is the canonical event log. Both directories are read at the start of
+// every turn and stitched into the system prompt so TARS has the same
+// context as the laptop Claude.
+const SHARED_DIR = path.resolve(process.env.SHARED_DIR ?? "./shared");
+const MEMORY_DIR = path.join(SHARED_DIR, "memory");
+const JOURNAL_FILE = path.join(SHARED_DIR, "journal.md");
+// Cap the journal at the last N lines so token cost stays bounded even
+// after months of use. 400 lines ≈ a few weeks of meaningful entries.
+const JOURNAL_TAIL_LINES = 400;
 
 // Just touch ANTHROPIC_API_KEY so linters don't strip it. The SDK
 // reads it directly from process.env.
@@ -31,8 +42,55 @@ const allowedUsers = new Set(
     .filter((n) => Number.isFinite(n)),
 );
 
+// Build the shared-context block (memory + recent journal) that gets
+// injected into the system prompt on every turn. Reads from disk fresh
+// each call so any memory/journal updates picked up by the sync are
+// visible to the next message TARS handles.
+async function buildSharedContext(): Promise<string> {
+  const parts: string[] = ["## Shared memory and journal"];
+  parts.push(
+    "These come from a directory the user syncs from their VS Code Claude",
+    "sessions. The memory below reflects everything that Claude knows about",
+    "the user, their projects, conventions, and recent decisions. Treat it",
+    "as ground truth.",
+  );
+
+  // Memory — read every .md file in the memory dir
+  try {
+    const files = await fs.readdir(MEMORY_DIR);
+    const mdFiles = files.filter((f) => f.endsWith(".md")).sort();
+    if (mdFiles.length === 0) {
+      parts.push("", "(no memory files yet — first sync hasn't happened)");
+    } else {
+      for (const f of mdFiles) {
+        const content = await fs.readFile(path.join(MEMORY_DIR, f), "utf8");
+        parts.push("", `### memory/${f}`, content.trim());
+      }
+    }
+  } catch {
+    parts.push("", "(memory directory not yet present — first sync hasn't happened)");
+  }
+
+  // Journal — tail
+  try {
+    const raw = await fs.readFile(JOURNAL_FILE, "utf8");
+    const lines = raw.split("\n");
+    const tail = lines.slice(Math.max(0, lines.length - JOURNAL_TAIL_LINES)).join("\n");
+    parts.push(
+      "",
+      "### journal.md (most recent entries — append new entries via the protocol below)",
+      tail.trim() || "(journal empty)",
+    );
+  } catch {
+    parts.push("", "### journal.md", "(journal file not yet present — create it on first append)");
+  }
+
+  return parts.join("\n");
+}
+
 async function main(): Promise<void> {
   await fs.mkdir(WORKING_ROOT, { recursive: true });
+  await fs.mkdir(MEMORY_DIR, { recursive: true });
   const store = new StateStore(DATA_DIR);
   await store.init();
 
@@ -69,6 +127,16 @@ async function main(): Promise<void> {
     );
   });
 
+  bot.command("journal", async (ctx) => {
+    try {
+      const raw = await fs.readFile(JOURNAL_FILE, "utf8");
+      const lines = raw.split("\n").slice(-60).join("\n");
+      await ctx.reply(lines.trim() || "(journal empty)");
+    } catch {
+      await ctx.reply("(no journal yet)");
+    }
+  });
+
   bot.on("message:text", async (ctx) => {
     const chatId = ctx.chat?.id;
     if (chatId === undefined) return;
@@ -78,12 +146,17 @@ async function main(): Promise<void> {
     const reply = new StreamingReply(ctx, chatId);
     await reply.start();
 
+    // Rebuild shared context fresh each turn so any memory/journal sync
+    // that happened mid-conversation is reflected.
+    const sharedContext = await buildSharedContext();
+
     try {
       for await (const event of runAgent({
         prompt: ctx.message.text,
         workingRoot: WORKING_ROOT,
         resumeSessionId: state.sessionId,
         model: CLAUDE_MODEL,
+        sharedContext,
       })) {
         switch (event.kind) {
           case "text":

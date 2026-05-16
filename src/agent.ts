@@ -24,6 +24,10 @@ export type RunOptions = {
   workingRoot: string;
   resumeSessionId: string | null;
   model: string;
+  // Optional. Extra text injected at the top of the system prompt for
+  // this run — used to share memory + journal with the user's VS Code
+  // Claude sessions so both have the same project context.
+  sharedContext?: string;
 };
 
 // Pull out a printable string from a message content block.
@@ -54,9 +58,13 @@ export async function* runAgent(opts: RunOptions): AsyncGenerator<AgentEvent> {
       type: "preset",
       preset: "claude_code",
       append: [
-        "You are running on a Linux VPS, driven by Telegram messages relayed",
-        "from a single user. Your cwd is /srv/relay-bot/repos, which contains",
-        "FIVE separate git repos as sibling subdirectories:",
+        opts.sharedContext ?? "",
+        "",
+        "## Your environment",
+        "You are TARS — a Claude agent running on a Linux VPS, driven by",
+        "Telegram messages relayed from a single user. Your cwd is",
+        "/srv/relay-bot/repos, which contains FIVE separate git repos as",
+        "sibling subdirectories:",
         "  parts-inventory/             (server,     branch master, github.com/yaegerrrr/parts-inventory)",
         "  parts-inventory-web/         (web app,    branch main,   github.com/yaegerrrr/parts-inventory-web)",
         "  parts-inventory-mobile/      (mobile,     branch main,   github.com/yaegerrrr/parts-inventory-mobile)",
@@ -67,7 +75,21 @@ export async function* runAgent(opts: RunOptions): AsyncGenerator<AgentEvent> {
         "repo at /srv/relay-bot/repos. The watcher Electron app lives at",
         "parts-inventory/watcher-app/. SSH key for github.com is configured —",
         "git pull/push work out of the box.",
-      ].join(" "),
+        "",
+        "## Journal protocol",
+        "After completing any meaningful work (a fix, a deploy, a non-trivial",
+        "investigation, a decision the user might forget), append one entry",
+        "to /srv/relay-bot/shared/journal.md in this format:",
+        "  ## YYYY-MM-DD HH:MM — TARS",
+        "  <one short paragraph: what was asked, what you did, anything the",
+        "  user's other Claude sessions should know>",
+        "  (blank line)",
+        "Use the Bash tool with: date -u +'%Y-%m-%d %H:%M' to get the timestamp.",
+        "Append via: echo '...' >> /srv/relay-bot/shared/journal.md",
+        "Don't journal every chat — only when something happened that would",
+        "matter to a colleague catching up tomorrow. Skip greetings, single",
+        "command lookups, simple status checks.",
+      ].join("\n"),
     },
     ...(opts.resumeSessionId ? { resume: opts.resumeSessionId } : {}),
   };
