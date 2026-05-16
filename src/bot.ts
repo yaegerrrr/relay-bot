@@ -19,7 +19,7 @@ const ANTHROPIC_API_KEY = required("ANTHROPIC_API_KEY"); // SDK reads it from en
 const TELEGRAM_ALLOWED_USER_IDS = required("TELEGRAM_ALLOWED_USER_IDS");
 const WORKING_ROOT = path.resolve(process.env.WORKING_ROOT ?? "./repos");
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? "./data");
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-7";
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
 
 // Just touch ANTHROPIC_API_KEY so linters don't strip it. The SDK
 // reads it directly from process.env.
@@ -131,7 +131,7 @@ async function main(): Promise<void> {
   });
 
   console.log(
-    `claude-bot starting (model=${CLAUDE_MODEL}, working_root=${WORKING_ROOT}, allowed_users=${[...allowedUsers].join(",")})`,
+    `relay-bot starting (model=${CLAUDE_MODEL}, working_root=${WORKING_ROOT}, allowed_users=${[...allowedUsers].join(",")})`,
   );
   await bot.start();
 }
